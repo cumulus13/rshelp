@@ -1,0 +1,20 @@
+/target
+Cargo.lock
+*.ini
+
+# Added entries (12 items)
+*.exe
+*.bak
+tmp*
+src/tmp*
+CLAUDE.md
+PLAN.md
+ANSWER*.md
+download/
+downloads/
+gitignore_backup/
+.pt/
+*sublime*
+
+# Ignore Sublime Text project files
+*.sublime-*
