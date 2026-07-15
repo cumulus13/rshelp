@@ -7,6 +7,8 @@
 //! whole page is converted to readable text instead of failing outright.
 
 use crate::error::Result;
+use once_cell::sync::Lazy;
+use regex::Regex;
 use scraper::{ElementRef, Html, Selector};
 use url::Url;
 
@@ -15,8 +17,8 @@ pub struct RenderedDoc {
     pub title: String,
     pub signature: Option<String>,
     pub description: String,
-    /// `(kind_or_empty, signature)` pairs for methods / trait impls, used by
-    /// `-a/--show-all` and the truncated default view.
+    /// Method / trait-impl signatures, used by `-a/--show-all` and the
+    /// truncated default view.
     pub items: Vec<String>,
     pub source_link: Option<String>,
     /// Set when fine-grained selectors found nothing and we fell back to a
@@ -28,7 +30,7 @@ fn select_first_text(doc: &Html, selectors: &[&str]) -> Option<String> {
     for sel in selectors {
         if let Ok(parsed) = Selector::parse(sel) {
             if let Some(el) = doc.select(&parsed).next() {
-                let text = collapse_whitespace(&el.text().collect::<Vec<_>>().join(" "));
+                let text = collapse_whitespace(&el.text().collect::<String>());
                 if !text.is_empty() {
                     return Some(text);
                 }
@@ -59,7 +61,9 @@ fn collapse_whitespace(s: &str) -> String {
 fn element_to_text(el: &ElementRef, width: usize) -> String {
     let html = el.inner_html();
     let text = html2text::from_read(html.as_bytes(), width.max(40)).unwrap_or_default();
-    text.lines()
+    let cleaned = clean_markdown(&text);
+    cleaned
+        .lines()
         .map(str::trim_end)
         .collect::<Vec<_>>()
         .join("\n")
@@ -76,7 +80,7 @@ fn find_source_link(doc: &Html, page_url: &str) -> Option<String> {
         if !href.contains("/src/") {
             continue;
         }
-        let text = collapse_whitespace(&a.text().collect::<Vec<_>>().join(" ")).to_lowercase();
+        let text = collapse_whitespace(&a.text().collect::<String>()).to_lowercase();
         let title = a
             .value()
             .attr("title")
@@ -114,7 +118,7 @@ fn collect_items(doc: &Html, cap: Option<usize>) -> Vec<String> {
     'sel: for sel in selectors {
         let Ok(parsed) = Selector::parse(sel) else { continue };
         for el in doc.select(&parsed) {
-            let text = collapse_whitespace(&el.text().collect::<Vec<_>>().join(" "));
+            let text = collapse_whitespace(&el.text().collect::<String>());
             if text.is_empty() || !seen.insert(text.clone()) {
                 continue;
             }
@@ -127,6 +131,40 @@ fn collect_items(doc: &Html, cap: Option<usize>) -> Vec<String> {
         }
     }
     out
+}
+
+/// `html2text` renders rustdoc's `<a>` links as reference-style markdown:
+/// `[label][3]` inline, plus a `[3]: https://...` definition dumped at the
+/// bottom of the whole block. That's exactly right for a document you'll
+/// keep re-reading, but in a terminal panel it's just noise -- so this
+/// strips the definition list and collapses `[label][N]` down to `label`
+/// (or `§` for rustdoc's anchor markers, which have an empty label).
+fn clean_markdown(text: &str) -> String {
+    static FOOTNOTE_DEF: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"^\s*\[\d+\]:\s").expect("static footnote-def regex must compile")
+    });
+    static REF_LINK: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"\[([^\]\[]*)\]\[\d+\]").expect("static ref-link regex must compile")
+    });
+    static BLANK_RUN: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"\n{3,}").expect("static blank-run regex must compile"));
+
+    let kept: Vec<&str> = text
+        .lines()
+        .filter(|line| !FOOTNOTE_DEF.is_match(line))
+        .collect();
+    let joined = kept.join("\n");
+
+    let simplified = REF_LINK.replace_all(&joined, |caps: &regex::Captures| {
+        let label = caps.get(1).map(|g| g.as_str()).unwrap_or_default();
+        if label.trim().is_empty() {
+            "§".to_string()
+        } else {
+            label.to_string()
+        }
+    });
+
+    BLANK_RUN.replace_all(&simplified, "\n\n").trim().to_string()
 }
 
 /// Parse a fetched rustdoc page. `page_url` is used to resolve relative
@@ -170,7 +208,7 @@ pub fn parse(html: &str, page_url: &str) -> Result<RenderedDoc> {
         let text = body_sel
             .and_then(|sel| doc.select(&sel).next())
             .map(|el| element_to_text(&el, 100))
-            .unwrap_or_else(|| collapse_whitespace(&doc.root_element().text().collect::<Vec<_>>().join(" ")));
+            .unwrap_or_else(|| collapse_whitespace(&doc.root_element().text().collect::<String>()));
 
         return Ok(RenderedDoc {
             title,

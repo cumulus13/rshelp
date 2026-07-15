@@ -4,7 +4,7 @@
 use crate::error::{RsHelpError, Result};
 use crate::highlight::highlight_line;
 use crate::http::{FetchOutcome, HttpCtx};
-use crate::ui::{palette, Theme};
+use crate::ui::{self, palette, panel, Theme};
 use scraper::{Html, Selector};
 use url::Url;
 
@@ -39,7 +39,7 @@ pub fn fetch_source(source_url: &str, http: &HttpCtx) -> Result<SourceView> {
     for sel_str in selectors {
         if let Ok(sel) = Selector::parse(sel_str) {
             if let Some(el) = doc.select(&sel).next() {
-                raw_text = el.text().collect::<Vec<_>>().join("");
+                raw_text = el.text().collect::<String>();
                 if !raw_text.trim().is_empty() {
                     break;
                 }
@@ -84,12 +84,17 @@ fn parse_fragment_range(frag: &str) -> Option<(usize, usize)> {
     }
 }
 
-/// Render a [`SourceView`] into a printable, line-numbered, syntax
-/// highlighted string. Long files are windowed around the highlighted
-/// range (or truncated from the top) unless `show_all` is set.
-pub fn render(theme: &Theme, view: &SourceView, show_all: bool) -> String {
+/// Render a [`SourceView`] into printable, line-numbered, syntax
+/// highlighted lines, ready for [`crate::ui::panel::panel_lines`]. Long
+/// files are windowed around the highlighted range (or truncated from the
+/// top) unless `show_all` is set; long source lines are wrapped to the
+/// panel width with a blank gutter on continuation lines, rather than
+/// overflowing the frame.
+pub fn render(theme: &Theme, view: &SourceView, show_all: bool) -> Vec<String> {
     let total = view.lines.len();
     let gutter_width = total.to_string().len().max(3);
+    let gutter_display_width = gutter_width + 3; // "NNN │ "
+    let code_width = panel::inner_width(theme).saturating_sub(gutter_display_width);
 
     let (from, to): (usize, usize) = if show_all {
         (1, total)
@@ -100,7 +105,7 @@ pub fn render(theme: &Theme, view: &SourceView, show_all: bool) -> String {
         (1, total.min(200))
     };
 
-    let mut out = String::new();
+    let mut out: Vec<String> = Vec::new();
     for (idx, line) in view.lines.iter().enumerate() {
         let lineno = idx + 1;
         if lineno < from || lineno > to {
@@ -112,25 +117,31 @@ pub fn render(theme: &Theme, view: &SourceView, show_all: bool) -> String {
             .map(|(s, e)| lineno >= s && lineno <= e)
             .unwrap_or(false);
 
-        let gutter = format!("{lineno:>gutter_width$} │ ");
+        let wrapped_code = ui::wrap_paragraphs(line, code_width);
 
-        if in_range {
-            let full = format!("{gutter}{line}");
-            out.push_str(&theme.cb(&full, palette::WARNING));
-        } else {
-            out.push_str(&theme.c(&gutter, palette::DIM));
-            out.push_str(&highlight_line(theme, line));
+        for (i, code_line) in wrapped_code.iter().enumerate() {
+            let gutter = if i == 0 {
+                format!("{lineno:>gutter_width$} │ ")
+            } else {
+                format!("{:>gutter_width$} │ ", "")
+            };
+
+            if in_range {
+                out.push(theme.cb(&format!("{gutter}{code_line}"), palette::WARNING));
+            } else {
+                let colored_gutter = theme.c(&gutter, palette::DIM);
+                let colored_code = highlight_line(theme, code_line);
+                out.push(format!("{colored_gutter}{colored_code}"));
+            }
         }
-        out.push('\n');
     }
 
     if !show_all && to < total {
-        out.push('\n');
-        out.push_str(&theme.c(
+        out.push(String::new());
+        out.push(theme.c(
             &format!("… {} more line(s) not shown, use -a/--show-all to see the full file …", total - to),
             palette::DIM,
         ));
-        out.push('\n');
     }
 
     out

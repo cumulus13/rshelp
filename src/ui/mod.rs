@@ -1,14 +1,13 @@
 //! Small terminal UI toolkit built on top of [`make_colors`] hex colors.
 //!
 //! There is no dependency on a full TUI framework -- `rshelp` only ever
-//! prints framed panels, simple tables, and a spinner, so a couple hundred
-//! lines of hand-rolled box-drawing is enough, and keeps the binary small
-//! and the behavior easy to reason about across every terminal emulator.
+//! prints framed panels and a spinner, so a couple hundred lines of
+//! hand-rolled box-drawing is enough, and keeps the binary small and the
+//! behavior easy to reason about across every terminal emulator.
 
 pub mod header;
 pub mod panel;
 pub mod spinner;
-pub mod table;
 
 use std::io::IsTerminal;
 
@@ -29,6 +28,27 @@ pub mod palette {
     pub const MACRO: &str = "#DCDCAA"; // macro!/fn names
     pub const ATTRIBUTE: &str = "#C586C0"; // #[attr]
     pub const NUMBER: &str = "#B5CEA8"; // numeric literals
+}
+
+/// Word-wrap `text` to `width` columns, preserving explicit blank lines as
+/// empty output lines. Always wraps *plain* text -- callers that need
+/// colored output should wrap first, then highlight each returned line, so
+/// wrapping decisions are never made on top of invisible ANSI bytes.
+pub fn wrap_paragraphs(text: &str, width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    for paragraph in text.split('\n') {
+        if paragraph.trim().is_empty() {
+            lines.push(String::new());
+        } else {
+            for wrapped in textwrap::wrap(paragraph, width.max(10)) {
+                lines.push(wrapped.into_owned());
+            }
+        }
+    }
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+    lines
 }
 
 /// Resolved rendering preferences for the current run: whether to emit ANSI
@@ -101,4 +121,32 @@ impl Theme {
             crate::emoji_util::strip_emoji(text)
         }
     }
+}
+
+/// The actual terminal column width of `s`: ANSI color escapes are
+/// invisible (zero columns) and must never be counted, and wide characters
+/// (most emoji, CJK) occupy two columns, not one -- `.chars().count()` gets
+/// both of these wrong, which is what causes panel borders to drift out of
+/// alignment whenever a line contains color codes or emoji.
+pub fn visible_width(s: &str) -> usize {
+    use unicode_width::UnicodeWidthStr;
+    strip_ansi(s).width()
+}
+
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1B}' && chars.peek() == Some(&'[') {
+            chars.next(); // consume '['
+            for next in chars.by_ref() {
+                if next.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+            continue;
+        }
+        out.push(c);
+    }
+    out
 }

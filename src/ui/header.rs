@@ -8,12 +8,13 @@ pub fn print(theme: &Theme, version: &str) {
         return;
     }
     let title = format!(
-        "{}rshelp{} v{version} {}",
+        "{}rshelp {}v{version} {}",
         theme.e("🦀"),
         theme.e("🚀"),
         theme.e("📚")
     );
-    let subtitle = "Beautiful terminal help for the Rust ecosystem";
-    let body = format!("{title}\n{subtitle}");
-    println!("{}", panel::panel(theme, "", &body, palette::PRIMARY));
+    let title = theme.cb(title.trim_end(), palette::PRIMARY);
+    let subtitle = theme.c("Beautiful terminal help for the Rust ecosystem", palette::DIM);
+    let lines = vec![title, subtitle];
+    println!("{}", panel::panel_lines(theme, "", &lines, palette::PRIMARY));
 }

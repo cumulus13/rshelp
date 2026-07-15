@@ -65,3 +65,33 @@ pub fn highlight_line(theme: &Theme, line: &str) -> String {
     out.push_str(&line[last_end..]);
     out
 }
+
+static BACKTICK_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"`([^`\n]+)`").expect("static backtick regex must compile")
+});
+
+/// Highlight inline code spans in prose text -- rustdoc's docblocks come
+/// through `html2text` as markdown-ish text with `` `code` `` spans for
+/// inline code and fenced examples. This finds those spans and runs their
+/// contents through [`highlight_line`], turning a flat wall of text into
+/// something that reads like a real syntax-highlighted doc viewer
+/// (Python's `rich.syntax.Syntax`, applied inline), while leaving
+/// surrounding prose untouched.
+pub fn highlight_prose_line(theme: &Theme, line: &str) -> String {
+    if !theme.color {
+        return line.to_string();
+    }
+
+    let mut out = String::with_capacity(line.len() + 16);
+    let mut last_end = 0;
+
+    for caps in BACKTICK_RE.captures_iter(line) {
+        let m = caps.get(0).unwrap();
+        let inner = caps.get(1).map(|g| g.as_str()).unwrap_or_default();
+        out.push_str(&line[last_end..m.start()]);
+        out.push_str(&highlight_line(theme, inner));
+        last_end = m.end();
+    }
+    out.push_str(&line[last_end..]);
+    out
+}
