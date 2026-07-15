@@ -6,6 +6,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-07-16
+
+### Fixed
+
+- Panel/box borders no longer drift out of alignment when a line contains
+  emoji (double-width) or ANSI color codes -- padding is now computed with
+  real terminal column width (`unicode-width`), not `.chars().count()`.
+- The signature panel, method/trait-impl list, and inline `` `code` ``
+  spans inside documentation prose are now actually syntax-highlighted
+  (previously only `-s/--source` output was).
+- Multi-line fenced code examples in documentation (rustdoc's `<pre><code>`
+  blocks, rendered by `html2text` with a lone backtick on the opening line
+  and a lone backtick on the closing line) are now detected as whole blocks
+  and fully highlighted, instead of showing as unhighlighted text with two
+  stray backtick characters.
+- Removed rustdoc's noisy reference-style link footnotes
+  (`[label][3]` / `[3]: https://...`) from documentation text.
+- Fixed stray extra spaces in extracted signatures and method lists
+  (`Global >`, `len (&self)`) caused by joining HTML text nodes with `" "`
+  instead of concatenating them directly.
+- Fixed a missing space between the crab and rocket emoji in the startup
+  banner.
+
+### Added
+
+- TOML config file support: `--init-config` writes an annotated template,
+  `--config <PATH>` points at a custom location. Supports built-in color
+  presets (`default`, `dracula`, `nord`, `monokai`, `gruvbox`, selectable
+  via `[theme] preset` or `--preset <NAME>`), per-color hex overrides, and
+  default values for `cache_ttl`/`timeout`/`crate_version`/emoji-color-quiet
+  flags that apply only when the matching CLI flag isn't passed.
+
 ## [0.1.0] - 2026-07-15
 
 ### Added

@@ -60,13 +60,15 @@ pub struct Cli {
     #[arg(long = "clear-cache")]
     pub clear_cache: bool,
 
-    /// How long cached pages stay fresh, in seconds.
-    #[arg(long = "cache-ttl", value_name = "SECS", default_value_t = 86_400)]
-    pub cache_ttl: u64,
+    /// How long cached pages stay fresh, in seconds [default: 86400, or the
+    /// config file's `[defaults] cache_ttl`].
+    #[arg(long = "cache-ttl", value_name = "SECS")]
+    pub cache_ttl: Option<u64>,
 
-    /// Network request timeout, in seconds.
-    #[arg(long = "timeout", value_name = "SECS", default_value_t = 15)]
-    pub timeout: u64,
+    /// Network request timeout, in seconds [default: 15, or the config
+    /// file's `[defaults] timeout`].
+    #[arg(long = "timeout", value_name = "SECS")]
+    pub timeout: Option<u64>,
 
     /// Disable emoji in output (useful for logs / CI).
     #[arg(long = "no-emoji")]
@@ -80,6 +82,21 @@ pub struct Cli {
     /// Suppress the banner/status panels; print only the requested content.
     #[arg(short = 'q', long = "quiet")]
     pub quiet: bool,
+
+    /// Path to a config file (default: the platform config directory, e.g.
+    /// `~/.config/rshelp/config.toml` on Linux).
+    #[arg(long = "config", value_name = "PATH")]
+    pub config: Option<std::path::PathBuf>,
+
+    /// Write an annotated default config file to the config path (or
+    /// `--config <PATH>` if given) and exit.
+    #[arg(long = "init-config")]
+    pub init_config: bool,
+
+    /// Use a built-in color preset (default, dracula, nord, monokai,
+    /// gruvbox), overriding the config file's `[theme] preset`.
+    #[arg(long = "preset", value_name = "NAME")]
+    pub preset: Option<String>,
 }
 
 // Note: `-V` / `--version` is intentionally *not* declared as a field here.
@@ -97,4 +114,6 @@ Examples:
   rshelp -i clap                       Interactive mode; keep querying
   rshelp --crate-version 1.0.4 anyhow  Look up docs for a pinned version
   rshelp --clear-cache                 Wipe the local documentation cache
+  rshelp --init-config                 Write an editable config file
+  rshelp --preset dracula std::vec::Vec  Try a built-in color preset
 ";

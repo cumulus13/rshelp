@@ -48,6 +48,39 @@ $ rshelp std::vec::Vec
 - 🎨 **Themeable, scriptable output** -- 24-bit hex colors throughout, with
   `--no-emoji`, `--plain`, and `--quiet` for logs, CI, and piping; color and
   emoji auto-disable when stdout isn't a terminal.
+- 🖌️ **Configurable theme** -- pick a built-in preset or override individual
+  colors in a TOML config file; see [Configuration](#configuration) below.
+
+## Configuration
+
+`rshelp` needs zero configuration to work, but every color is customizable.
+Generate an editable, annotated config file with:
+
+```sh
+rshelp --init-config
+```
+
+This writes to your platform's config directory (e.g.
+`~/.config/rshelp/config.toml` on Linux, `~/Library/Application
+Support/rshelp/config.toml` on macOS, `%APPDATA%\rshelp\config.toml` on
+Windows) -- or pass `--config <path>` to use a different file, either to
+generate it there or to have any run of `rshelp` read from it.
+
+```toml
+[theme]
+preset = "dracula"      # default, dracula, nord, monokai, gruvbox
+# primary = "#00FFFF"   # override any individual color on top of the preset
+
+[defaults]
+cache_ttl = 86400
+timeout   = 15
+```
+
+Try a preset for one run without touching the file: `rshelp --preset nord
+serde::Deserialize`. Individual color fields (`primary`, `accent`,
+`success`, `warning`, `error`, `info`, `dim`, `keyword`, `type_name`,
+`string`, `comment`, `macro`, `attribute`, `number`) accept any `#RRGGBB`
+hex value and are applied on top of the chosen preset.
 
 ## Installation
 
@@ -103,6 +136,9 @@ Examples:
 | `--no-emoji` | Disable emoji in output |
 | `--plain` | Disable colors and emoji entirely |
 | `-q`, `--quiet` | Suppress banner/status panels; print only the content |
+| `--config <PATH>` | Use a specific config file instead of the default location |
+| `--init-config` | Write an annotated default config file and exit |
+| `--preset <NAME>` | Use a built-in color preset for this run |
 | `-V`, `--version` | Print colorful version information and exit |
 | `-h`, `--help` | Print help |
 

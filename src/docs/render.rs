@@ -16,7 +16,7 @@ use url::Url;
 pub struct RenderedDoc {
     pub title: String,
     pub signature: Option<String>,
-    pub description: String,
+    pub description: Vec<DocBlock>,
     /// Method / trait-impl signatures, used by `-a/--show-all` and the
     /// truncated default view.
     pub items: Vec<String>,
@@ -24,6 +24,15 @@ pub struct RenderedDoc {
     /// Set when fine-grained selectors found nothing and we fell back to a
     /// whole-page text dump, so the caller can label the panel accordingly.
     pub fallback: bool,
+}
+
+/// A segment of a documentation body: either ordinary prose (which may
+/// still contain short inline `` `code` `` spans) or a whole fenced code
+/// example, rendered and highlighted differently by the caller.
+#[derive(Debug, Clone)]
+pub enum DocBlock {
+    Text(String),
+    Code(String),
 }
 
 fn select_first_text(doc: &Html, selectors: &[&str]) -> Option<String> {
@@ -167,6 +176,65 @@ fn clean_markdown(text: &str) -> String {
     BLANK_RUN.replace_all(&simplified, "\n\n").trim().to_string()
 }
 
+/// `html2text` renders a multi-line fenced code example (from rustdoc's
+/// `<pre><code>...</code></pre>`) by prefixing a single backtick directly
+/// onto the first line and appending a single backtick onto the last line,
+/// with plain, unmarked code lines in between -- it does *not* wrap every
+/// line individually. A per-line "does this line contain a `` `..` ``
+/// pair" check (as used for short inline code) therefore never matches a
+/// whole example, and it renders as a wall of unhighlighted text with two
+/// stray backticks. This splits the cleaned text into alternating prose /
+/// code segments so each can be highlighted appropriately.
+fn split_code_blocks(text: &str) -> Vec<DocBlock> {
+    let mut blocks = Vec::new();
+    let mut in_code = false;
+    let mut code_buf: Vec<String> = Vec::new();
+    let mut text_buf: Vec<String> = Vec::new();
+
+    let flush_text = |buf: &mut Vec<String>, blocks: &mut Vec<DocBlock>| {
+        if !buf.is_empty() {
+            blocks.push(DocBlock::Text(buf.join("\n")));
+            buf.clear();
+        }
+    };
+    let flush_code = |buf: &mut Vec<String>, blocks: &mut Vec<DocBlock>| {
+        if !buf.is_empty() {
+            blocks.push(DocBlock::Code(buf.join("\n")));
+            buf.clear();
+        }
+    };
+
+    for line in text.lines() {
+        let backtick_count = line.matches('`').count();
+
+        if !in_code {
+            let opens_fence = backtick_count % 2 == 1 && line.trim_start().starts_with('`');
+            if opens_fence {
+                flush_text(&mut text_buf, &mut blocks);
+                in_code = true;
+                let rest = line.trim_start();
+                code_buf.push(rest[1..].to_string());
+            } else {
+                text_buf.push(line.to_string());
+            }
+        } else {
+            let closes_fence = backtick_count % 2 == 1 && line.trim_end().ends_with('`');
+            if closes_fence {
+                let rest = line.trim_end();
+                code_buf.push(rest[..rest.len() - 1].to_string());
+                flush_code(&mut code_buf, &mut blocks);
+                in_code = false;
+            } else {
+                code_buf.push(line.to_string());
+            }
+        }
+    }
+
+    flush_code(&mut code_buf, &mut blocks);
+    flush_text(&mut text_buf, &mut blocks);
+    blocks
+}
+
 /// Parse a fetched rustdoc page. `page_url` is used to resolve relative
 /// source links to absolute URLs.
 pub fn parse(html: &str, page_url: &str) -> Result<RenderedDoc> {
@@ -193,7 +261,7 @@ pub fn parse(html: &str, page_url: &str) -> Result<RenderedDoc> {
     );
 
     let description_el = select_first_element(&doc, &["details.top-doc .docblock", ".docblock", "#main-content .docblock"]);
-    let description = description_el
+    let description_text = description_el
         .as_ref()
         .map(|el| element_to_text(el, 100))
         .unwrap_or_default();
@@ -201,7 +269,7 @@ pub fn parse(html: &str, page_url: &str) -> Result<RenderedDoc> {
     let source_link = find_source_link(&doc, page_url);
     let items = collect_items(&doc, None);
 
-    if signature.is_none() && description.is_empty() && items.is_empty() {
+    if signature.is_none() && description_text.is_empty() && items.is_empty() {
         // Nothing recognizable in the markup: fall back to a whole-page
         // text dump so the user still sees *something* useful.
         let body_sel = Selector::parse("#main-content, main, body").ok();
@@ -213,7 +281,7 @@ pub fn parse(html: &str, page_url: &str) -> Result<RenderedDoc> {
         return Ok(RenderedDoc {
             title,
             signature: None,
-            description: text,
+            description: vec![DocBlock::Text(text)],
             items: Vec::new(),
             source_link,
             fallback: true,
@@ -223,7 +291,7 @@ pub fn parse(html: &str, page_url: &str) -> Result<RenderedDoc> {
     Ok(RenderedDoc {
         title,
         signature,
-        description,
+        description: split_code_blocks(&description_text),
         items,
         source_link,
         fallback: false,

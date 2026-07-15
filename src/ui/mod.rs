@@ -60,13 +60,20 @@ pub struct Theme {
     pub emoji: bool,
     pub quiet: bool,
     pub width: usize,
+    /// Maps a *default* `palette::*` hex constant to a user-configured
+    /// replacement. Keyed by the default value (not a field name) so every
+    /// existing call site -- `theme.c(text, palette::PRIMARY)` and so on --
+    /// keeps working unchanged; the substitution happens transparently
+    /// inside [`Theme::c`]/[`Theme::cb`].
+    overrides: std::collections::HashMap<&'static str, String>,
 }
 
 impl Theme {
-    /// Build a theme from CLI flags, auto-detecting non-TTY output (piped
-    /// into a file or another program) and disabling color/emoji in that
-    /// case even if the flags weren't explicitly passed.
-    pub fn new(no_emoji: bool, plain: bool, quiet: bool) -> Self {
+    /// Build a theme from CLI flags and a loaded [`crate::config::ThemeConfig`],
+    /// auto-detecting non-TTY output (piped into a file or another program)
+    /// and disabling color/emoji in that case even if the flags weren't
+    /// explicitly passed.
+    pub fn new(no_emoji: bool, plain: bool, quiet: bool, theme_config: &crate::config::ThemeConfig) -> Self {
         let is_tty = std::io::stdout().is_terminal();
         let no_color_env = std::env::var_os("NO_COLOR").is_some();
 
@@ -80,17 +87,20 @@ impl Theme {
             emoji: !plain && !no_emoji,
             quiet,
             width,
+            overrides: build_overrides(theme_config),
         }
     }
 
     /// Colorize `text` with a `#RRGGBB` hex foreground, respecting the
-    /// current color preference. Falls back to plain text if color is
-    /// disabled or if `hex` fails to parse for any reason.
+    /// current color preference and any configured override for `hex`.
+    /// Falls back to plain text if color is disabled or if the effective
+    /// hex fails to parse for any reason.
     pub fn c(&self, text: &str, hex: &str) -> String {
         if !self.color {
             return text.to_string();
         }
-        make_colors::make_colors_hex(text, hex, None).unwrap_or_else(|_| text.to_string())
+        let effective = self.effective_hex(hex);
+        make_colors::make_colors_hex(text, effective, None).unwrap_or_else(|_| text.to_string())
     }
 
     /// Same as [`Theme::c`] but bold.
@@ -98,8 +108,16 @@ impl Theme {
         if !self.color {
             return text.to_string();
         }
-        make_colors::make_colors_hex_with_attrs(text, hex, None, &["bold"])
+        let effective = self.effective_hex(hex);
+        make_colors::make_colors_hex_with_attrs(text, effective, None, &["bold"])
             .unwrap_or_else(|_| text.to_string())
+    }
+
+    fn effective_hex<'a>(&'a self, default_hex: &'a str) -> &'a str {
+        self.overrides
+            .get(default_hex)
+            .map(String::as_str)
+            .unwrap_or(default_hex)
     }
 
     /// Prefix an emoji glyph (with a trailing space) if emoji are enabled,
@@ -121,6 +139,54 @@ impl Theme {
             crate::emoji_util::strip_emoji(text)
         }
     }
+}
+
+/// Build the default-hex -> override-hex map from a preset (if any) plus
+/// individual field overrides layered on top. Invalid hex values are
+/// silently ignored (falls back to the default) rather than producing
+/// broken escape codes.
+fn build_overrides(cfg: &crate::config::ThemeConfig) -> std::collections::HashMap<&'static str, String> {
+    use crate::config::{is_valid_hex, preset_overrides};
+    use palette::*;
+
+    let mut map = std::collections::HashMap::new();
+
+    if let Some(preset_name) = &cfg.preset {
+        if let Some(pairs) = preset_overrides(preset_name) {
+            for (default_hex, override_hex) in pairs {
+                map.insert(default_hex, override_hex.to_string());
+            }
+        } else {
+            eprintln!("rshelp: unknown theme preset '{preset_name}', ignoring");
+        }
+    }
+
+    let mut set = |default_hex: &'static str, value: &Option<String>| {
+        if let Some(v) = value {
+            if is_valid_hex(v) {
+                map.insert(default_hex, v.clone());
+            } else {
+                eprintln!("rshelp: invalid color '{v}' in config, expected '#RRGGBB', ignoring");
+            }
+        }
+    };
+
+    set(PRIMARY, &cfg.primary);
+    set(ACCENT, &cfg.accent);
+    set(SUCCESS, &cfg.success);
+    set(WARNING, &cfg.warning);
+    set(ERROR, &cfg.error);
+    set(INFO, &cfg.info);
+    set(DIM, &cfg.dim);
+    set(KEYWORD, &cfg.keyword);
+    set(TYPE_NAME, &cfg.type_name);
+    set(STRING, &cfg.string);
+    set(COMMENT, &cfg.comment);
+    set(MACRO, &cfg.macro_color);
+    set(ATTRIBUTE, &cfg.attribute);
+    set(NUMBER, &cfg.number);
+
+    map
 }
 
 /// The actual terminal column width of `s`: ANSI color escapes are

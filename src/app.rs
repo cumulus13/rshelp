@@ -2,6 +2,7 @@
 //! Shared by both the one-shot CLI path and the interactive REPL.
 
 use crate::docs;
+use crate::docs::render::DocBlock;
 use crate::error::RsHelpError;
 use crate::highlight::{highlight_line, highlight_prose_line};
 use crate::http::HttpCtx;
@@ -90,20 +91,39 @@ fn print_signature(theme: &Theme, sig: &str) {
 /// Documentation panel: same wrap-then-highlight ordering, but using the
 /// prose highlighter so only backtick-delimited inline code gets colored,
 /// leaving surrounding sentences as normal text.
-fn print_description(theme: &Theme, description: &str) {
+/// Documentation panel. Prose blocks get wrap-then-highlight for inline
+/// `` `code` `` spans and bolded markdown headings; whole fenced code
+/// examples get full line-by-line syntax highlighting, set off with blank
+/// lines and a small indent so they read as a distinct block, the same way
+/// `rich.syntax.Syntax` would render an embedded example.
+fn print_description(theme: &Theme, blocks: &[DocBlock]) {
     let inner = panel::inner_width(theme);
-    let decorated = theme.decorate(description);
-    let lines: Vec<String> = ui::wrap_paragraphs(&decorated, inner)
-        .into_iter()
-        .map(|line| {
-            let trimmed = line.trim_start();
-            if trimmed.starts_with('#') {
-                theme.cb(trimmed.trim_start_matches('#').trim_start(), palette::ACCENT)
-            } else {
-                highlight_prose_line(theme, &line)
+    let mut lines: Vec<String> = Vec::new();
+
+    for block in blocks {
+        match block {
+            DocBlock::Text(text) => {
+                let decorated = theme.decorate(text);
+                for line in ui::wrap_paragraphs(&decorated, inner) {
+                    let trimmed = line.trim_start();
+                    if trimmed.starts_with('#') {
+                        lines.push(theme.cb(trimmed.trim_start_matches('#').trim_start(), palette::ACCENT));
+                    } else {
+                        lines.push(highlight_prose_line(theme, &line));
+                    }
+                }
             }
-        })
-        .collect();
+            DocBlock::Code(code) => {
+                let decorated = theme.decorate(code);
+                lines.push(String::new());
+                for line in ui::wrap_paragraphs(&decorated, inner.saturating_sub(2)) {
+                    let indented = format!("  {line}");
+                    lines.push(highlight_line(theme, &indented));
+                }
+                lines.push(String::new());
+            }
+        }
+    }
 
     let title = format!("{}Documentation", theme.e("📖"));
     println!("{}", panel::panel_lines(theme, &title, &lines, palette::INFO));
