@@ -43,9 +43,7 @@ pub fn highlight_line(theme: &Theme, line: &str) -> String {
 
         let colored = if caps.name("comment").is_some() {
             theme.c(m.as_str(), palette::COMMENT)
-        } else if caps.name("string").is_some() {
-            theme.c(m.as_str(), palette::STRING)
-        } else if caps.name("char").is_some() {
+        } else if caps.name("string").is_some() || caps.name("char").is_some() {
             theme.c(m.as_str(), palette::STRING)
         } else if caps.name("attr").is_some() {
             theme.c(m.as_str(), palette::ATTRIBUTE)
