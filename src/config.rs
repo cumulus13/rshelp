@@ -88,7 +88,7 @@ pub fn write_default(path: &Path) -> std::io::Result<()> {
     std::fs::write(path, DEFAULT_CONFIG_TOML)
 }
 
-pub const DEFAULT_CONFIG_TOML: &str = r#"# rshelp configuration file
+pub const DEFAULT_CONFIG_TOML: &str = r##"# rshelp configuration file
 #
 # Every field is optional. Anything left commented out (or the whole file
 # being absent) uses rshelp's built-in defaults. Override --config to point
@@ -125,7 +125,7 @@ pub const DEFAULT_CONFIG_TOML: &str = r#"# rshelp configuration file
 # cache_ttl     = 86400
 # timeout       = 15
 # crate_version = "1.0.0"
-"#;
+"##;
 
 /// A single preset: `(default_hex_constant, override_hex)` pairs, matched
 /// against `crate::ui::palette` constants the same way per-field config
