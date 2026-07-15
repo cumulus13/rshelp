@@ -132,7 +132,7 @@ fn candidate_urls(target: &Target) -> Vec<String> {
 
     let starts_upper = last.chars().next().map(char::is_uppercase).unwrap_or(false);
 
-    let mut item_urls = |kinds: &[&str]| -> Vec<String> {
+    let item_urls = |kinds: &[&str]| -> Vec<String> {
         kinds
             .iter()
             .map(|kind| format!("{}/{parent_path}/{kind}.{last}.html", target.base))

@@ -58,8 +58,8 @@ fn collapse_whitespace(s: &str) -> String {
 /// `html2text`.
 fn element_to_text(el: &ElementRef, width: usize) -> String {
     let html = el.inner_html();
-    html2text::from_read(html.as_bytes(), width.max(40))
-        .lines()
+    let text = html2text::from_read(html.as_bytes(), width.max(40)).unwrap_or_default();
+    text.lines()
         .map(str::trim_end)
         .collect::<Vec<_>>()
         .join("\n")

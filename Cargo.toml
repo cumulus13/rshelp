@@ -1,6 +1,6 @@
 [package]
 name = "rshelp"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 authors = ["Hadi Cahyadi <cumulus13@gmail.com>"]
 description = "Enhanced Rust documentation helper with beautiful terminal output. Look up std/core/alloc docs, crates.io crate docs, and source code, right from your terminal."
