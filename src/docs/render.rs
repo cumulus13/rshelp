@@ -235,6 +235,59 @@ fn split_code_blocks(text: &str) -> Vec<DocBlock> {
     blocks
 }
 
+const SIGNATURE_SELECTORS: &[&str] = &[
+    "pre.item-decl",
+    ".item-decl pre",
+    "pre.rust.item-decl",
+    "pre.rust.fn",
+    "pre.rust.struct",
+    "pre.rust.trait",
+    "pre.rust.enum",
+    "pre.rust.macro",
+    "pre.rust.union",
+    "pre.rust.type",
+    "pre.fn",
+    "pre.struct",
+    "pre.trait",
+    "pre.enum",
+    "pre.macro",
+    "pre.union",
+    "pre.type",
+];
+
+/// `true` if `el` is nested inside a `.docblock`/`.top-doc` element -- i.e.
+/// it's a code example embedded in prose, not the page's actual item
+/// declaration. Crate/module index pages have no item declaration at all,
+/// so without this check the "Quick Start" example in the crate-level docs
+/// gets mistaken for one.
+fn is_inside_docblock(el: &ElementRef) -> bool {
+    el.ancestors().any(|node| {
+        node.value()
+            .as_element()
+            .and_then(|e| e.attr("class"))
+            .map(|class| class.contains("docblock") || class.contains("top-doc"))
+            .unwrap_or(false)
+    })
+}
+
+/// Find the page's real item-declaration signature, if any, rejecting any
+/// candidate that's actually just an example snippet inside the docblock.
+fn find_signature_text(doc: &Html) -> Option<String> {
+    for sel_str in SIGNATURE_SELECTORS {
+        let Ok(sel) = Selector::parse(sel_str) else { continue };
+        for el in doc.select(&sel) {
+            if is_inside_docblock(&el) {
+                continue;
+            }
+            let text = collapse_whitespace(&el.text().collect::<String>());
+            if !text.is_empty() {
+                return Some(text);
+            }
+        }
+    }
+    None
+}
+
 /// Parse a fetched rustdoc page. `page_url` is used to resolve relative
 /// source links to absolute URLs.
 pub fn parse(html: &str, page_url: &str) -> Result<RenderedDoc> {
@@ -242,23 +295,7 @@ pub fn parse(html: &str, page_url: &str) -> Result<RenderedDoc> {
 
     let title = select_first_text(&doc, &["h1.main-heading", "h1", "title"]).unwrap_or_else(|| "(untitled)".into());
 
-    let signature = select_first_text(
-        &doc,
-        &[
-            "pre.item-decl",
-            ".item-decl pre",
-            "pre.rust.item-decl",
-            "pre.rust.fn",
-            "pre.rust.struct",
-            "pre.rust.trait",
-            "pre.rust.enum",
-            "pre.fn",
-            "pre.struct",
-            "pre.trait",
-            "pre.enum",
-            "pre.rust",
-        ],
-    );
+    let signature = find_signature_text(&doc);
 
     let description_el = select_first_element(&doc, &["details.top-doc .docblock", ".docblock", "#main-content .docblock"]);
     let description_text = description_el
